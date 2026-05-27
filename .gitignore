@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# The unzipped upstream repo (we copied what we need into data/raw/)
+CoachAI-Projects-main/
+CoachAI-Projects-main.zip
