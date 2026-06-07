@@ -1,0 +1,4 @@
+style,n_observations,n_players,mean_displacement,rally_win_rate
+Patient,895,2,157.467,0.479
+Placement,2388,8,160.032,0.495
+Power,1067,3,147.254,0.507

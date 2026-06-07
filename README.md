@@ -1,119 +1,217 @@
-# Spatial Pressure in Badminton Rallies
+# Spatial pressure and rally outcomes in elite badminton
 
-QSS 20 Final Project — Milestone 2
-Aakanksh Vaidya
+QSS 20 final project — Aakanksh Vaidya
 
-## What this project is
+Code and analysis testing whether "spatial pressure" (forcing your opponent to
+move) decides who wins rallies in elite women's singles badminton, using the
+stroke-level ShuttleSet22 dataset. Short version of the finding: it does not.
+Cumulative pressure, playstyle, and the winner's setup shot all come up null or
+within noise; the rally is decided on the single final shot, which is most often
+the trailing player's error.
 
-I'm using stroke-level badminton data from elite men's and women's singles matches to ask whether forcing the opponent to move more (spatial pressure) is associated with winning rallies. The original idea was to treat rallies as sequences of shot types and look for common tactical patterns, but I shifted away from that because shot-type labels on their own don't really tell you much about strategy — they ignore where the shuttle actually goes and how far the opponent has to move to reach it. So this milestone reframes the analysis around spatial pressure instead.
+- **Paper:** `paper/` (PNAS-style LaTeX source and compiled PDF)
+- **Website (live demo):** https://aakanksh.netlify.app/badminton/
+- **Notebooks:** `code/` (run in numeric order; see below)
 
-## Data
+# Data
 
-The data comes from ShuttleSet22 (Wang et al., 2023, arXiv:2306.15664), which I pulled from the [upstream repo](https://github.com/wywyWang/CoachAI-Projects/tree/main/CoachAI-Challenge-IJCAI2023/ShuttleSet22). It covers 58 matches and 35 elite singles players from 2020–2022, for a total of 52,356 strokes across 4,944 rallies. Every stroke has the shot type (originally in Chinese), the hitter and opponent court positions, where the shuttle landed, and how the rally eventually ended.
+The analysis uses **ShuttleSet22**, a public stroke-level dataset of elite
+professional badminton singles matches: 58 matches, 35 players, 2020–2022,
+52,356 strokes across 4,944 rallies. The main analysis is restricted to the 13
+women's-singles players (~22,500 strokes).
 
-The raw files live in `data/raw/`. I kept the original upstream README and preprocessing script in that folder too for reference.
+- Source dataset: [ShuttleSet22 (CoachAI-Projects repo)](https://github.com/wywyWang/CoachAI-Projects/tree/main/CoachAI-Challenge-IJCAI2023/ShuttleSet22)
+- Dataset paper: Wang, Du, Peng, "ShuttleSet22: Benchmarking Stroke Forecasting with Stroke-Level Badminton Dataset," [arXiv:2306.15664](https://arxiv.org/abs/2306.15664) (2023)
 
-## How to run
+**The raw data is not committed to this repository.** To reproduce, download
+ShuttleSet22 from the source above and place it under `data/raw/` so that
+`data/raw/match.csv` and `data/raw/set/<match>/set*.csv` exist, then run the
+notebooks in order.
 
-```bash
-pip install -r requirements.txt
-python code/01_load_explore.py
-python code/02_clean_encode.py
-python code/03_analyze_spatial.py
+Coordinates are in the dataset's camera-derived court-coordinate units, not
+meters, so all displacement values are relative.
+
+# Directories
+
+```
+code/      analysis notebooks, plus utils.py and shot_translations.py
+data/      raw/ (ShuttleSet22 input, not committed) and processed/ (notebook outputs)
+output/    figure PNGs and summary CSVs
+paper/     LaTeX source and compiled PDF
 ```
 
-The scripts have to run in order — script 02 builds the processed stroke table that script 03 reads from.
+# Shared code
 
-## Repo layout
+- [code/utils.py](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/utils.py) — helpers imported by several notebooks (path constants, `load_strokes`, `load_matches`, `map_player_names` which resolves the A/B player codes to real names with before/after merge diagnostics, `restrict_to_womens`, `add_rally_sequence`).
+- [code/shot_translations.py](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/shot_translations.py) — dictionary mapping the 18 Chinese shot-type labels to English. Imported by notebook 02; not run on its own.
 
-```
-qss20_final_project/
-├── README.md
-├── requirements.txt
-├── .gitignore
-├── code/
-│   ├── shot_translations.py
-│   ├── 01_load_explore.py
-│   ├── 02_clean_encode.py
-│   └── 03_analyze_spatial.py
-├── data/
-│   ├── raw/
-│   └── processed/
-└── output/
-```
+Every notebook begins with a path-bootstrap cell that locates the repo root (the
+folder containing `data/`) and sets the working directory there, so the
+notebooks run regardless of where they are launched.
 
-## What each script does
+# Order to run
 
-`shot_translations.py` is just a dictionary that maps the 18 Chinese shot type labels in the data to English (using the translation table from the upstream README). I added two extra entries: one for a typo variant in the raw data (`過度切球` instead of `過渡切球`, both mapped to `passive drop`), and one for the dataset's own `未知球種` placeholder for unclassified shots.
+1. [01_load_explore.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/01_load_explore.ipynb)
 
-`01_load_explore.py` loads `match.csv` and prints basic stats — 58 matches, 35 players, the most repeated matchups (Yamaguchi vs An Se Young played 4 times, CHEN Yufei vs HE Bingjiao 3 times), and a breakdown of how many sets each match went (34 went 2 sets, 24 went 3). It's mostly a sanity check that the data loaded right.
+- Takes in:
+  - `data/raw/match.csv`
+  - `data/raw/set/<match>/set*.csv`
+- What it does:
+  - Loads match metadata, prints basic counts (matches, players)
+  - Builds the matchup-frequency table and counts set files per match
+  - Peeks at one stroke-level file to confirm the schema
+- Outputs:
+  - `data/processed/matchup_counts.csv`
+  - `data/processed/set_files_per_match.csv`
 
-`02_clean_encode.py` does the actual data work. It walks every match folder, stitches together every `set{1,2,3}.csv` into one long table where each row is a single stroke, and adds three derived columns:
+2. [02_clean_encode.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/02_clean_encode.ipynb)
 
-- `shot_type` — English shot type from the dictionary
-- `displacement` — Euclidean distance from where the opponent was standing to where the shuttle landed. This is the core metric of the project: how far the opponent had to move to reach each shot.
-- `hitter_won_rally` — whether the player who hit this stroke ended up winning the rally. The raw data only records the rally winner on the last stroke, so I forward/back-fill that label across every stroke in the rally.
+- Takes in:
+  - `data/raw/match.csv` and all per-set stroke files
+  - `code/shot_translations.py`
+- What it does:
+  - Concatenates every stroke from all 58 matches into one long table
+  - Translates Chinese shot-type labels to English
+  - Computes opponent `displacement` for every stroke (Euclidean distance from the opponent's position to the shuttle's landing point)
+  - Attaches the rally outcome to every stroke by forward/back-filling `getpoint_player` within each rally (a within-group fill, not a join; prints row counts before/after to confirm the count is unchanged)
+- Outputs:
+  - `data/processed/strokes_all.csv`
 
-The output is `data/processed/strokes_all.csv` with all 52,356 strokes.
+3. [03_analyze_spatial.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/03_analyze_spatial.ipynb)
 
-`03_analyze_spatial.py` reads that processed table and produces three figures plus a summary stats CSV.
+- Takes in:
+  - `data/processed/strokes_all.csv`
+- What it does:
+  - Produces three descriptive figures: shot frequency, mean displacement by shot type, and cumulative displacement over the rally split by eventual winner vs loser
+  - This is the first test of the pressure hypothesis (it comes back null: winner/loser cumulative-displacement curves are nearly identical)
+- Outputs:
+  - `output/shot_frequency.png`
+  - `output/mean_displacement_by_shot.png`
+  - `output/displacement_winners_vs_losers.png`
+  - `output/summary_stats.csv`
 
-## Findings
+4. [04_player_features.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/04_player_features.ipynb)
 
-### Figure 1 — Shot frequency
+- Takes in:
+  - `data/processed/strokes_all.csv`
+  - `data/raw/match.csv`
+- What it does:
+  - Builds a per-player feature vector: shot-type mix, mean depth from court center, mean displacement applied, rally lengths when winning/losing, win rate, share of wins by own-winner vs opponent-error, and landing-spot variance
+  - Uses `utils.map_player_names` to resolve A/B codes to real names
+- Outputs:
+  - `data/processed/player_features.csv`
 
-Just a descriptive baseline of how often each shot type shows up. Net shots, lobs, and return-nets are the most common; services and defensive returns are the least.
+5. [04b_assign_sex.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/04b_assign_sex.ipynb)
 
-### Figure 2 — Mean opponent displacement by shot type
+- Takes in:
+  - `data/raw/match.csv`
+- What it does:
+  - Infers each player's sex (M/W) from match co-occurrence: matches are never mixed-sex, so co-players share a sex; a few known-sex anchors are propagated through the graph of shared matches via BFS
+- Outputs:
+  - `data/processed/player_sex.csv`
 
-For each shot type, the average distance the opponent had to move to reach the shot. This reframes shot selection from "how often is this shot hit" to "how much does it actually move the opponent."
+6. [05_cluster_players.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/05_cluster_players.ipynb)
 
-The result that stood out to me: cross-court net shots and return-nets generate the highest mean displacement (around 210 and 186 units), while services are lowest (around 70). Smashes — which I'd have guessed would top the list — sit in the middle at around 150. The reason that makes sense is that smashes travel hard but down the line, while cross-court shots force the opponent to cover lateral distance, which is usually further than the depth they already need to cover.
+- Takes in:
+  - `data/processed/player_features.csv`
+  - `data/processed/player_sex.csv`
+- What it does:
+  - Hierarchical (Ward-linkage) clustering of players within one sex into k=3 playstyle groups, with a dendrogram, a 2D PCA projection (for visualization only), and per-cluster feature profiles
+  - Run once per sex: edit the `SEX` constant at the top of the config cell (`"W"` for women's, `"M"` for men's). Leave it on `"W"` after the final run, since the downstream notebooks use the women's clusters.
+- Outputs (with `{SEX}` = `W` or `M`):
+  - `data/processed/player_clusters_{SEX}.csv`
+  - `output/dendrogram_{SEX}.png`
+  - `output/players_pca_{SEX}.png`
+  - `output/cluster_profiles_{SEX}.csv`
 
-### Figure 3 — Cumulative displacement, winners vs losers
+7. [05b_choose_k.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/05b_choose_k.ipynb)
 
-This is the actual test of the pressure hypothesis. For each rally, I tracked the cumulative displacement each player applied over the course of the rally, then averaged across rallies and split by whether the hitter eventually won.
+- Takes in:
+  - `data/processed/player_features.csv`
+  - `data/processed/player_sex.csv`
+- What it does:
+  - Computes silhouette scores across k=2..6 for each sex, to let the data set the number of playstyle groups
+  - Finding: women's peaks weakly (~0.22) at k=3; men's never clears the noise floor, so men's clustering is not used downstream
+- Outputs:
+  - `output/silhouette_by_k.png`
 
-The two curves are basically identical at every rally length. Mean displacement applied by rally winners is 155.46 units, by losers is 156.44. So at the aggregate level, applying more cumulative spatial pressure does not predict who wins the rally.
+8. [06_conditional_pressure.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/06_conditional_pressure.ipynb)
 
-I want to be honest that this is a null result and that the simple version of the hypothesis didn't hold. A few reasons I think it could be coming out null:
+- Takes in:
+  - `data/processed/strokes_all.csv`
+  - `data/processed/player_clusters_W.csv`
+  - `data/raw/match.csv`
+- What it does:
+  - Women's singles only. Logistic regression of rally win on standardized displacement, fit separately within each playstyle cluster, plus an exploratory hitter-by-opponent-style win-rate grid
+  - Associational and exploratory, not causal; the clusters are weak so results are read as suggestive. Mostly null.
+- Outputs:
+  - `output/pressure_by_style.png`
+  - `output/pressure_logit_coefs.csv`
+  - `output/rally_sample_table.csv`
+  - `output/hitter_opponent_winrate.csv`
 
-- Pressure in a rally is mutual — if both players are hitting good shots, both accumulate displacement, and totals wash out.
-- The distribution probably matters more than the mean. One or two decisive high-pressure shots could matter more than steady pressure throughout the rally.
-- Cumulative across the whole rally averages the decisive end with the neutral middle, which dilutes whatever signal is there.
-- The hitter's own court position probably matters too — pulling the opponent wide doesn't help much if you're also out of position.
+9. [07_displacement_escalation.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/07_displacement_escalation.ipynb)
 
-## Summary stats (`output/summary_stats.csv`)
+- Takes in:
+  - `data/processed/strokes_all.csv`
+  - `data/processed/player_clusters_W.csv`
+  - `data/raw/match.csv`
+- What it does:
+  - Tests whether the trajectory of pressure across a rally (slope, last/first ratio, peak timing, final-shot displacement) predicts winning, since the average does not
+  - Plots the per-position pressure trajectory used in the paper
+- Outputs:
+  - `output/escalation_metrics.png`
+  - `output/escalation_summary.csv`
+  - `output/escalation_logit.csv`
+  - `output/pressure_trajectory.png`
 
-| metric                                    | value |
-|-------------------------------------------|-------|
-| total strokes                             | 52,356 |
-| total rallies                             | 4,944  |
-| total matches                             | 58     |
-| mean displacement (all strokes)           | 155.96 |
-| mean displacement (rallies won by hitter) | 155.46 |
-| mean displacement (rallies lost by hitter)| 156.44 |
+10. [08_desperation_check.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/08_desperation_check.ipynb)
 
-## Possible directions from here
+- Takes in:
+  - `data/processed/strokes_all.csv`
+  - `data/processed/player_clusters_W.csv`
+  - `data/raw/match.csv`
+- What it does:
+  - Women's singles only. Breaks final-stroke displacement down by how the rally ended (own placement winner vs each forced-error type), and as a broad own-winner vs forced-error split
+  - Finding: final-shot displacement tracks the ending type, highest on opponent-out, lowest on netted (the netted result is the evidence against a pure geometry explanation)
+- Outputs:
+  - `output/final_shot_by_reason.csv`
+  - `output/final_shot_by_reason.png`
 
-A few directions I'm considering for where to take this next. I'll be making a decision on which to pursue soon.
+11. [09_attrition_vs_moment.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/09_attrition_vs_moment.ipynb)
 
-The first is to look at the *setup* stroke before the rally-ending shot rather than the last stroke itself. Last-stroke displacement is partly an artifact of the rally ending — once the opponent can't reach the shot, you can place it almost anywhere — so the more informative question is whether displacement on the stroke that *created the opening* is higher for eventual winners.
+- Takes in:
+  - `data/processed/strokes_all.csv`
+  - `data/processed/player_clusters_W.csv`
+  - `data/raw/match.csv`
+- What it does:
+  - Women's singles only. Tests attrition (loser progressively pushed out of position) vs single-moment (level until one decisive shot), using the hitter's own distance from court center across the rally and the winner-loser gap
+  - Finding: even-execution — the gap is flat with no terminal positional break
+- Outputs:
+  - `output/attrition_check.png`
 
-The second is to plot per-stroke (not cumulative) displacement across the rally and see if there's a point where the winner and loser curves actually diverge. If they do diverge, where that happens would tell me when the rally actually gets decided.
+12. [11_setup_shot.ipynb](https://github.com/aakankshvaidya27/qss20-final-project/blob/main/code/11_setup_shot.ipynb)
 
-A third would be to stratify by shot type. A high-displacement smash and a high-displacement cross-court net shot are doing different tactical work, and lumping them together might be hiding a real signal.
+- Takes in:
+  - `data/processed/strokes_all.csv`
+  - `data/processed/player_sex.csv`
+  - `data/raw/match.csv`
+- What it does:
+  - Women's singles only. Compares the winner's penultimate ("setup") shot to their own rally-wide baseline, reports the share of rallies ending on the loser's racket (~63%), and plots displacement over the final shots
+  - Finding: the setup shot is about average for the winner (163 vs 159 baseline); no engineered setup
+- Outputs:
+  - `output/setup_shot.png`
 
-A fourth, more ambitious one would be to cluster the 35 players using their shot distributions and average court positions to get a data-driven player typology — attacking, control, defensive — and then test whether displacement predicts rally wins differently depending on the hitter-opponent style matchup. This is the most interesting direction to me but also the most time-consuming.
+# Analysis type
 
-A fifth would be to add the hitter's own positional context — whether they're in a controlled or scrambling position when they hit — as a second spatial variable.
+Descriptive and exploratory throughout. No causal identification is claimed and
+no train-test split is used. Where regressions appear (notebooks 06 and 07) they
+are associational; the playstyle clusters are weak (silhouette ~0.22), so
+style-conditional results are reported as suggestive only. Differences are judged
+against the shot-to-shot standard deviation of displacement (~78 units) rather
+than formal significance tests.
 
-Right now I'm leaning toward combining the first two (setup-stroke and divergence-point analysis) as the core of the final paper, treating the cumulative null as the motivating finding. I'll bring this to my next meeting with the professor to decide.
+# Citation
 
-## A note on the coordinates
-
-The displacement values are in the dataset's native coordinate system (camera pixels, not meters). The dataset does include a homography matrix that maps to real-world coordinates, but I haven't applied it yet. So all the displacement comparisons here are relative — "smashes generate around 2× the displacement of drives" is fine to say, but "the opponent ran 1.5 meters" isn't. Converting to real units is straightforward and something I'll do if it matters for the final paper.
-
-## Citation
-
-Wei-Yao Wang, Wei-Wei Du, and Wen-Chih Peng. *ShuttleSet22: Benchmarking Stroke Forecasting with Stroke-Level Badminton Dataset.* arXiv:2306.15664, 2023.
+Wei-Yao Wang, Wei-Wei Du, Wen-Chih Peng. "ShuttleSet22: Benchmarking Stroke
+Forecasting with Stroke-Level Badminton Dataset." arXiv:2306.15664 (2023).

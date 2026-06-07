@@ -17,3 +17,10 @@ Thumbs.db
 # The unzipped upstream repo (we copied what we need into data/raw/)
 CoachAI-Projects-main/
 CoachAI-Projects-main.zip
+
+# R session files
+.Rhistory
+
+site/
+code/_old_py_scripts/
+package-lock.json

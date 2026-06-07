@@ -1,0 +1,4 @@
+cluster,pct_smash,pct_attacking,pct_defensive,pct_net,pct_neutral,mean_depth_from_center,mean_displacement_applied,mean_rally_length_when_won,pct_wins_by_winner,landing_x_std
+1,0.07,0.07,0.198,0.392,0.138,70.035,136.111,10.421,0.342,131.627
+2,0.091,0.042,0.201,0.327,0.207,89.163,153.642,10.67,0.278,150.524
+3,0.071,0.064,0.159,0.336,0.235,104.574,160.769,10.653,0.306,155.458
